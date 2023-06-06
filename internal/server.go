@@ -18,8 +18,6 @@ import (
 	sentry "github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi"
 	chiware "github.com/go-chi/chi/middleware"
-	"github.com/mikaelhg/litesync/internal/litecache"
-	"github.com/mikaelhg/litesync/internal/liteds"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
@@ -49,8 +47,8 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 	r.Use(batware.BearerToken)
 	r.Use(middleware.CommonResponseHeaders)
 
-	sqlite_ds := liteds.NewSqliteDatastore()
-	cache := cache.NewCache(&litecache.FakeRedisClient{})
+	sqlite_ds := NewSqliteDatastore()
+	cache := cache.NewCache(&FakeRedisClient{})
 
 	ctx = context.WithValue(ctx, syncContext.ContextKeyDatastore, sqlite_ds)
 	ctx = context.WithValue(ctx, syncContext.ContextKeyCache, &cache)
