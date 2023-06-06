@@ -18,17 +18,11 @@ import (
 	sentry "github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi"
 	chiware "github.com/go-chi/chi/middleware"
-	"github.com/mikaelhg/go-sync-sqlite/internal/litecache"
-	"github.com/mikaelhg/go-sync-sqlite/internal/liteds"
+	"github.com/mikaelhg/litesync/internal/litecache"
+	"github.com/mikaelhg/litesync/internal/liteds"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 	"github.com/rs/zerolog/log"
-)
-
-var (
-	commit    string
-	version   string
-	buildTime string
 )
 
 func setupLogger(ctx context.Context) (context.Context, *zerolog.Logger) {
@@ -45,7 +39,6 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 	r.Use(chiware.Heartbeat("/"))
 
 	if logger != nil {
-		// Also handles panic recovery
 		r.Use(hlog.NewHandler(*logger))
 		r.Use(hlog.UserAgentHandler("user_agent"))
 		r.Use(hlog.RequestIDHandler("req_id", "Request-Id"))
@@ -59,28 +52,17 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 	sqlite_ds := liteds.NewSqliteDatastore()
 	cache := cache.NewCache(&litecache.FakeRedisClient{})
 
-	// Provide datastore & cache via context
 	ctx = context.WithValue(ctx, syncContext.ContextKeyDatastore, sqlite_ds)
 	ctx = context.WithValue(ctx, syncContext.ContextKeyCache, &cache)
 
 	r.Mount("/v2", controller.SyncRouter(cache, sqlite_ds))
 	r.Get("/metrics", batware.Metrics())
 
-	log.Info().
-		Str("version", version).
-		Str("commit", commit).
-		Str("buildTime", buildTime).
-		Msg("server starting up")
-
 	return ctx, r
 }
 
-// StartServer starts the translate proxy server on port 8195
 func StartServer() {
 	serverCtx, logger := setupLogger(context.Background())
-
-	subLog := logger.Info().Str("prefix", "main")
-	subLog.Msg("Starting server")
 
 	serverCtx, r := setupRouter(serverCtx, logger)
 
@@ -91,9 +73,6 @@ func StartServer() {
 	signal.Notify(sig, syscall.SIGTERM)
 	go func() {
 		<-sig
-		log.Info().Msg("SIGTERM received, disabling health check")
-
-		time.Sleep(60 * time.Second)
 		srv.Shutdown(serverCtx)
 	}()
 
