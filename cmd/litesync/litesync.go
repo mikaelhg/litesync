@@ -1,6 +1,6 @@
 package main
 
-import "github.com/mikaelhg/go-sync-sqlite/internal"
+import "github.com/mikaelhg/litesync/internal"
 
 func main() {
 	internal.StartServer()

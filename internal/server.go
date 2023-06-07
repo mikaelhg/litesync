@@ -15,7 +15,6 @@ import (
 	syncContext "github.com/brave/go-sync/context"
 	"github.com/brave/go-sync/controller"
 	"github.com/brave/go-sync/middleware"
-	sentry "github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi"
 	chiware "github.com/go-chi/chi/middleware"
 	"github.com/rs/zerolog"
@@ -32,7 +31,6 @@ func setupLogger(ctx context.Context) (context.Context, *zerolog.Logger) {
 func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, *chi.Mux) {
 	r := chi.NewRouter()
 
-	r.Use(chiware.RequestID)
 	r.Use(chiware.RealIP)
 	r.Use(chiware.Heartbeat("/"))
 
@@ -48,13 +46,12 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 	r.Use(middleware.CommonResponseHeaders)
 
 	sqlite_ds := NewSqliteDatastore()
-	cache := cache.NewCache(&FakeRedisClient{})
+	cache := cache.NewCache(NewFakeRedisClient())
 
 	ctx = context.WithValue(ctx, syncContext.ContextKeyDatastore, sqlite_ds)
 	ctx = context.WithValue(ctx, syncContext.ContextKeyCache, &cache)
 
-	r.Mount("/v2", controller.SyncRouter(cache, sqlite_ds))
-	r.Get("/metrics", batware.Metrics())
+	r.Mount("/litesync", controller.SyncRouter(cache, sqlite_ds))
 
 	return ctx, r
 }
@@ -71,14 +68,13 @@ func StartServer() {
 	signal.Notify(sig, syscall.SIGTERM)
 	go func() {
 		<-sig
-		srv.Shutdown(serverCtx)
+		_ = srv.Shutdown(serverCtx)
 	}()
 
 	err := srv.ListenAndServe()
 	if err == http.ErrServerClosed {
 		log.Info().Msg("HTTP server closed")
 	} else if err != nil {
-		sentry.CaptureException(err)
 		log.Panic().Err(err).Msg("HTTP server start failed!")
 	}
 }
