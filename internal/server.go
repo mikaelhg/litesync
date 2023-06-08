@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/signal"
@@ -57,22 +58,18 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 }
 
 func StartServer() {
-	serverCtx, logger := setupLogger(context.Background())
-
-	serverCtx, r := setupRouter(serverCtx, logger)
-
 	port := ":8295"
+	serverCtx, logger := setupLogger(context.Background())
+	serverCtx, r := setupRouter(serverCtx, logger)
 	srv := http.Server{Addr: port, Handler: chi.ServerBaseContext(serverCtx, r)}
-
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM)
 	go func() {
 		<-sig
 		_ = srv.Shutdown(serverCtx)
 	}()
-
 	err := srv.ListenAndServe()
-	if err == http.ErrServerClosed {
+	if errors.Is(err, http.ErrServerClosed) {
 		log.Info().Msg("HTTP server closed")
 	} else if err != nil {
 		log.Panic().Err(err).Msg("HTTP server start failed!")

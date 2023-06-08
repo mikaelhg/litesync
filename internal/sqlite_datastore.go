@@ -1,28 +1,53 @@
 package internal
 
-import "github.com/brave/go-sync/datastore"
+import (
+	"database/sql"
+	_ "embed"
+
+	_ "github.com/mattn/go-sqlite3"
+
+	braveds "github.com/brave/go-sync/datastore"
+)
 
 type SqliteDatastore struct {
-	datastore.Datastore
+	braveds.Datastore
+	db *sql.DB
 }
 
 func NewSqliteDatastore() *SqliteDatastore {
-	return &SqliteDatastore{}
+	db, err := sql.Open("sqlite3", "./litesync.sqlite")
+	if err != nil {
+		panic(err)
+	}
+	return &SqliteDatastore{db: db}
 }
 
-func (d SqliteDatastore) InsertSyncEntity(entity *datastore.SyncEntity) (bool, error) {
+//go:embed insert_sync_entity.sql
+var insertSyncEntityQuery string
+
+func (d *SqliteDatastore) InsertSyncEntity(entity *braveds.SyncEntity) (bool, error) {
+	stmt, err := d.db.Prepare(insertSyncEntityQuery)
 	return false, nil
 }
 
-func (d SqliteDatastore) InsertSyncEntitiesWithServerTags(entities []*datastore.SyncEntity) error {
+func (d *SqliteDatastore) InsertSyncEntitiesWithServerTags(entities []*braveds.SyncEntity) error {
+	for _, se := range entities {
+		_, err := d.InsertSyncEntity(se)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func (d SqliteDatastore) UpdateSyncEntity(entity *datastore.SyncEntity, oldVersion int64) (conflict bool, delete bool, err error) {
+var updateSyncEntityQuery string
+
+func (d *SqliteDatastore) UpdateSyncEntity(entity *braveds.SyncEntity, oldVersion int64) (conflict bool, delete bool, err error) {
+	stmt, err := d.db.Prepare(updateSyncEntityQuery)
 	return false, false, nil
 }
 
-func (d SqliteDatastore) GetUpdatesForType(dataType int, clientToken int64, fetchFolders bool, clientID string, maxSize int64) (bool, []datastore.SyncEntity, error) {
+func (d SqliteDatastore) GetUpdatesForType(dataType int, clientToken int64, fetchFolders bool, clientID string, maxSize int64) (bool, []braveds.SyncEntity, error) {
 	return false, nil, nil
 }
 
@@ -38,7 +63,7 @@ func (d SqliteDatastore) UpdateClientItemCount(clientID string, count int) error
 	return nil
 }
 
-func (d SqliteDatastore) ClearServerData(clientID string) ([]datastore.SyncEntity, error) {
+func (d SqliteDatastore) ClearServerData(clientID string) ([]braveds.SyncEntity, error) {
 	return nil, nil
 }
 
