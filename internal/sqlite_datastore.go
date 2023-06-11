@@ -1,8 +1,9 @@
 package internal
 
 import (
+	"context"
 	"database/sql"
-	_ "embed"
+	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -22,28 +23,95 @@ func NewSqliteDatastore() *SqliteDatastore {
 	return &SqliteDatastore{db: db}
 }
 
-//go:embed insert_sync_entity.sql
-var insertSyncEntityQuery string
+const insertSyncEntityQuery = `
+INSERT INTO sync_entities (
+	id,
+	client_id,
+	"version",
+	mtime,
+	specifics,
+	datatype_mtime,
+	unique_position,
+	parent_id,
+	"name",
+	"non_unique_name",
+	"deleted",
+	"folder"
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
 
-func (d *SqliteDatastore) InsertSyncEntity(entity *braveds.SyncEntity) (bool, error) {
-	stmt, err := d.db.Prepare(insertSyncEntityQuery)
-	return false, nil
+func (d *SqliteDatastore) InsertSyncEntity(se *braveds.SyncEntity) (bool, error) {
+	fail := func(err error) (bool, error) {
+		return false, fmt.Errorf("InsertSyncEntity: %v", err)
+	}
+	tx, err := d.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fail(err)
+	}
+	defer tx.Rollback()
+	if se.ClientDefinedUniqueTag != nil {
+		// Additional item for ensuring tag's uniqueness for a specific client.
+		item := braveds.NewServerClientUniqueTagItem(se.ClientID,
+			*se.ClientDefinedUniqueTag, false)
+		// Normal sync item
+	} else {
+		_, err = tx.Exec(insertSyncEntityQuery,
+			se.ID, se.ClientID, se.Version, se.Mtime, se.Specifics, se.DataTypeMtime,
+			se.UniquePosition, se.ParentID, se.Name, se.NonUniqueName, se.Deleted, se.Folder)
+		if err != nil {
+			return fail(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fail(err)
+	}
+	return true, nil
 }
 
 func (d *SqliteDatastore) InsertSyncEntitiesWithServerTags(entities []*braveds.SyncEntity) error {
+	fail := func(err error) error {
+		return fmt.Errorf("InsertSyncEntitiesWithServerTags: %v", err)
+	}
+	tx, err := d.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fail(err)
+	}
+	defer tx.Rollback()
 	for _, se := range entities {
-		_, err := d.InsertSyncEntity(se)
+		_, err = tx.Exec(insertSyncEntityQuery,
+			se.ID, se.ClientID, se.Version, se.Mtime, se.Specifics, se.DataTypeMtime,
+			se.UniquePosition, se.ParentID, se.Name, se.NonUniqueName, se.Deleted, se.Folder)
 		if err != nil {
-			return err
+			return fail(err)
 		}
+	}
+	if err = tx.Commit(); err != nil {
+		return fail(err)
 	}
 	return nil
 }
 
-var updateSyncEntityQuery string
+const updateSyncEntityQuery = `
+`
 
-func (d *SqliteDatastore) UpdateSyncEntity(entity *braveds.SyncEntity, oldVersion int64) (conflict bool, delete bool, err error) {
-	stmt, err := d.db.Prepare(updateSyncEntityQuery)
+func (d *SqliteDatastore) UpdateSyncEntity(se *braveds.SyncEntity, oldVersion int64) (conflict bool, delete bool, err error) {
+	fail := func(err error) (bool, bool, error) {
+		return false, false, fmt.Errorf("InserUpdateSyncEntitytSyncEntity: %v", err)
+	}
+	tx, err := d.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fail(err)
+	}
+	_, err = tx.Exec(updateSyncEntityQuery,
+		se.ID, se.ClientID, se.Version, se.Mtime, se.Specifics, se.DataTypeMtime,
+		se.UniquePosition, se.ParentID, se.Name, se.NonUniqueName, se.Deleted, se.Folder)
+	if err != nil {
+		return fail(err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fail(err)
+	}
 	return false, false, nil
 }
 
