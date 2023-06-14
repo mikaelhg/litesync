@@ -15,12 +15,47 @@ type SqliteDatastore struct {
 	db *sql.DB
 }
 
-func NewSqliteDatastore() *SqliteDatastore {
-	db, err := sql.Open("sqlite3", "./litesync.sqlite")
+func NewSqliteDatastore(filename string) *SqliteDatastore {
+	db, err := sql.Open("sqlite3", filename)
 	if err != nil {
 		panic(err)
 	}
 	return &SqliteDatastore{db: db}
+}
+
+const createTableQuery = `
+CREATE TABLE sync_entities (
+    id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    "version" INTEGER,
+    mtime INTEGER,
+    specifics BLOB,
+    datatype_mtime TEXT,
+    unique_position BLOB,
+    parent_id TEXT,
+    "name" TEXT,
+    "non_unique_name" TEXT,
+    "deleted" BOOLEAN,
+    "folder" BOOLEAN,
+    PRIMARY KEY (client_id, id)
+)
+`
+
+func (d *SqliteDatastore) CreateTable() error {
+	fail := func(err error) error {
+		return fmt.Errorf("CreateTable: %v", err)
+	}
+	tx, err := d.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fail(err)
+	}
+	if _, err = tx.Exec(createTableQuery); err != nil {
+		return fail(err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fail(err)
+	}
+	return nil
 }
 
 const insertSyncEntityQuery = `
@@ -52,7 +87,7 @@ func (d *SqliteDatastore) InsertSyncEntity(se *braveds.SyncEntity) (bool, error)
 	defer tx.Rollback()
 	if se.ClientDefinedUniqueTag != nil {
 		// Additional item for ensuring tag's uniqueness for a specific client.
-		item := braveds.NewServerClientUniqueTagItem(se.ClientID,
+		_ = braveds.NewServerClientUniqueTagItem(se.ClientID,
 			*se.ClientDefinedUniqueTag, false)
 		// Normal sync item
 	} else {
@@ -115,16 +150,35 @@ func (d *SqliteDatastore) UpdateSyncEntity(se *braveds.SyncEntity, oldVersion in
 	return false, false, nil
 }
 
+const getClientItemCountQuery = `
+SELECT COUNT(*)
+FROM sync_entities
+WHERE client_id = ?
+`
+
+func (d SqliteDatastore) GetClientItemCount(clientID string) (int, error) {
+	fail := func(err error) (int, error) {
+		return -1, fmt.Errorf("GetClientItemCount: %v", err)
+	}
+	tx, err := d.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fail(err)
+	}
+	var count int = -1
+	row := tx.QueryRow(getClientItemCountQuery, clientID)
+	row.Scan(&count)
+	if err = tx.Commit(); err != nil {
+		return fail(err)
+	}
+	return count, nil
+}
+
 func (d SqliteDatastore) GetUpdatesForType(dataType int, clientToken int64, fetchFolders bool, clientID string, maxSize int64) (bool, []braveds.SyncEntity, error) {
 	return false, nil, nil
 }
 
 func (d SqliteDatastore) HasServerDefinedUniqueTag(clientID string, tag string) (bool, error) {
 	return false, nil
-}
-
-func (d SqliteDatastore) GetClientItemCount(clientID string) (int, error) {
-	return 0, nil
 }
 
 func (d SqliteDatastore) UpdateClientItemCount(clientID string, count int) error {

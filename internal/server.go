@@ -46,7 +46,7 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 	r.Use(batware.BearerToken)
 	r.Use(middleware.CommonResponseHeaders)
 
-	sqliteStore := NewSqliteDatastore()
+	sqliteStore := NewSqliteDatastore("./litesync.sqlite")
 	cache := cache.NewCache(NewFakeRedisClient())
 
 	ctx = context.WithValue(ctx, syncContext.ContextKeyDatastore, sqliteStore)
