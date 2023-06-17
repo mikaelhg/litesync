@@ -29,7 +29,7 @@ func setupLogger(ctx context.Context) (context.Context, *zerolog.Logger) {
 	return logging.SetupLogger(ctx)
 }
 
-func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, *chi.Mux) {
+func setupRouter(ctx context.Context, logger *zerolog.Logger, dbFile string) (context.Context, *chi.Mux) {
 	r := chi.NewRouter()
 
 	r.Use(chiware.RealIP)
@@ -46,7 +46,7 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 	r.Use(batware.BearerToken)
 	r.Use(middleware.CommonResponseHeaders)
 
-	sqliteStore := NewSqliteDatastore("./litesync.sqlite")
+	sqliteStore, _ := NewSqliteDatastore(dbFile)
 	cache := cache.NewCache(NewFakeRedisClient())
 
 	ctx = context.WithValue(ctx, syncContext.ContextKeyDatastore, sqliteStore)
@@ -57,10 +57,9 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger) (context.Context, 
 	return ctx, r
 }
 
-func StartServer() {
-	port := ":8295"
+func StartServer(port string, dbFile string) {
 	serverCtx, logger := setupLogger(context.Background())
-	serverCtx, r := setupRouter(serverCtx, logger)
+	serverCtx, r := setupRouter(serverCtx, logger, dbFile)
 	srv := http.Server{Addr: port, Handler: chi.ServerBaseContext(serverCtx, r)}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM)

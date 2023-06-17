@@ -9,8 +9,9 @@ import (
 )
 
 func TestInsertion(t *testing.T) {
-	ds := internal.NewSqliteDatastore(":memory:")
-	ds.CreateTable()
+	ds, err := internal.NewSqliteDatastore(":memory:")
+	err = ds.CreateTable()
+	assert.NoError(t, err, "can't have an error here")
 
 	one := int64(1)
 
@@ -21,8 +22,8 @@ func TestInsertion(t *testing.T) {
 	}
 
 	ok, err := ds.InsertSyncEntity(&se)
-	assert.True(t, ok)
 	assert.NoError(t, err, "can't have an error here")
+	assert.True(t, ok)
 
 	count, err := ds.GetClientItemCount(se.ClientID)
 	assert.NoError(t, err, "can't have an error here")

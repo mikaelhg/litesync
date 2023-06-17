@@ -15,16 +15,16 @@ type SqliteDatastore struct {
 	db *sql.DB
 }
 
-func NewSqliteDatastore(filename string) *SqliteDatastore {
+func NewSqliteDatastore(filename string) (*SqliteDatastore, error) {
 	db, err := sql.Open("sqlite3", filename)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &SqliteDatastore{db: db}
+	return &SqliteDatastore{db: db}, nil
 }
 
 const createTableQuery = `
-CREATE TABLE sync_entities (
+CREATE TABLE IF NOT EXISTS sync_entities (
     id TEXT NOT NULL,
     client_id TEXT NOT NULL,
     "version" INTEGER,
@@ -41,19 +41,27 @@ CREATE TABLE sync_entities (
 )
 `
 
-func (d *SqliteDatastore) CreateTable() error {
-	fail := func(err error) error {
-		return fmt.Errorf("CreateTable: %v", err)
-	}
+type execFunc func(tx *sql.Tx) (sql.Result, error)
+
+func (d *SqliteDatastore) execInTransaction(proxied execFunc) (*sql.Result, error) {
 	tx, err := d.db.BeginTx(context.Background(), nil)
 	if err != nil {
-		return fail(err)
+		return nil, err
 	}
-	if _, err = tx.Exec(createTableQuery); err != nil {
-		return fail(err)
-	}
+	defer tx.Rollback()
+	txRes, txErr := proxied(tx)
 	if err = tx.Commit(); err != nil {
-		return fail(err)
+		return nil, err
+	}
+	return &txRes, txErr
+}
+
+func (d *SqliteDatastore) CreateTable() error {
+	_, err := d.execInTransaction(func(tx *sql.Tx) (sql.Result, error) {
+		return tx.Exec(createTableQuery)
+	})
+	if err != nil {
+		return err
 	}
 	return nil
 }
