@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	batware "github.com/brave-intl/bat-go/middleware"
-	appctx "github.com/brave-intl/bat-go/utils/context"
-	"github.com/brave-intl/bat-go/utils/logging"
+	appctx "github.com/brave-intl/bat-go/libs/context"
+	"github.com/brave-intl/bat-go/libs/logging"
+	batware "github.com/brave-intl/bat-go/libs/middleware"
 	"github.com/brave/go-sync/cache"
 	syncContext "github.com/brave/go-sync/context"
 	"github.com/brave/go-sync/controller"
