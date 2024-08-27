@@ -84,7 +84,7 @@ INSERT INTO sync_entities (
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
-func (d *SqliteDatastore) InsertSyncEntity(se *braveds.SyncEntity) (bool, error) {
+func (d *SqliteDatastore) InsertSyncEntity2(se *braveds.SyncEntity) (bool, error) {
 	fail := func(err error) (bool, error) {
 		return false, fmt.Errorf("InsertSyncEntity: %v", err)
 	}
@@ -112,6 +112,52 @@ func (d *SqliteDatastore) InsertSyncEntity(se *braveds.SyncEntity) (bool, error)
 	return true, nil
 }
 
+func (d *SqliteDatastore) InsertSyncEntity(se *braveds.SyncEntity) (bool, error) {
+	fail := func(err error) (bool, error) {
+		return false, fmt.Errorf("InsertSyncEntity: %v", err)
+	}
+	tx, err := d.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fail(err)
+	}
+	defer tx.Rollback()
+
+	if se.ClientDefinedUniqueTag != nil {
+		// Check for existing tag item
+		var exists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM sync_entities WHERE client_id = ? AND id = ?)",
+			se.ClientID, "Client#"+*se.ClientDefinedUniqueTag).Scan(&exists)
+		if err != nil {
+			return fail(err)
+		}
+		if exists {
+			return true, fmt.Errorf("client tag already exists")
+		}
+
+		// Insert tag item
+		_, err = tx.Exec(insertSyncEntityQuery,
+			"Client#"+*se.ClientDefinedUniqueTag, se.ClientID, 0, se.Mtime, nil, nil,
+			nil, nil, nil, nil, false, false)
+		if err != nil {
+			return fail(err)
+		}
+	}
+
+	// Insert sync entity
+	_, err = tx.Exec(insertSyncEntityQuery,
+		se.ID, se.ClientID, se.Version, se.Mtime, se.Specifics, se.DataTypeMtime,
+		se.UniquePosition, se.ParentID, se.Name, se.NonUniqueName, se.Deleted, se.Folder)
+	if err != nil {
+		return fail(err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fail(err)
+	}
+
+	return false, nil
+}
+
 func (d *SqliteDatastore) InsertSyncEntitiesWithServerTags(entities []*braveds.SyncEntity) error {
 	fail := func(err error) error {
 		return fmt.Errorf("InsertSyncEntitiesWithServerTags: %v", err)
@@ -121,7 +167,30 @@ func (d *SqliteDatastore) InsertSyncEntitiesWithServerTags(entities []*braveds.S
 		return fail(err)
 	}
 	defer tx.Rollback()
+
 	for _, se := range entities {
+		if se.ServerDefinedUniqueTag != nil {
+			// Check for existing tag item
+			var exists bool
+			err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM sync_entities WHERE client_id = ? AND id = ?)",
+				se.ClientID, "Server#"+*se.ServerDefinedUniqueTag).Scan(&exists)
+			if err != nil {
+				return fail(err)
+			}
+			if exists {
+				return fmt.Errorf("server tag already exists")
+			}
+
+			// Insert tag item
+			_, err = tx.Exec(insertSyncEntityQuery,
+				"Server#"+*se.ServerDefinedUniqueTag, se.ClientID, 0, se.Mtime, nil, nil,
+				nil, nil, nil, nil, false, false)
+			if err != nil {
+				return fail(err)
+			}
+		}
+
+		// Insert sync entity
 		_, err = tx.Exec(insertSyncEntityQuery,
 			se.ID, se.ClientID, se.Version, se.Mtime, se.Specifics, se.DataTypeMtime,
 			se.UniquePosition, se.ParentID, se.Name, se.NonUniqueName, se.Deleted, se.Folder)
@@ -129,33 +198,70 @@ func (d *SqliteDatastore) InsertSyncEntitiesWithServerTags(entities []*braveds.S
 			return fail(err)
 		}
 	}
+
 	if err = tx.Commit(); err != nil {
 		return fail(err)
 	}
+
 	return nil
 }
 
 const updateSyncEntityQuery = `
+UPDATE sync_entities
+SET "version" = ?,
+    mtime = ?,
+    specifics = ?,
+    datatype_mtime = ?,
+    unique_position = ?,
+    parent_id = ?,
+    "name" = ?,
+    "non_unique_name" = ?,
+    "deleted" = ?,
+    "folder" = ?
+WHERE client_id = ? AND id = ? AND "version" = ?
 `
 
 func (d *SqliteDatastore) UpdateSyncEntity(se *braveds.SyncEntity, oldVersion int64) (conflict bool, delete bool, err error) {
 	fail := func(err error) (bool, bool, error) {
-		return false, false, fmt.Errorf("InserUpdateSyncEntitytSyncEntity: %v", err)
+		return false, false, fmt.Errorf("UpdateSyncEntity: %v", err)
 	}
+
 	tx, err := d.db.BeginTx(context.Background(), nil)
 	if err != nil {
 		return fail(err)
 	}
-	_, err = tx.Exec(updateSyncEntityQuery,
-		se.ID, se.ClientID, se.Version, se.Mtime, se.Specifics, se.DataTypeMtime,
-		se.UniquePosition, se.ParentID, se.Name, se.NonUniqueName, se.Deleted, se.Folder)
+	defer tx.Rollback()
+
+	res, err := tx.Exec(updateSyncEntityQuery,
+		se.Version, se.Mtime, se.Specifics, se.DataTypeMtime,
+		se.UniquePosition, se.ParentID, se.Name, se.NonUniqueName, se.Deleted, se.Folder,
+		se.ClientID, se.ID, oldVersion)
 	if err != nil {
 		return fail(err)
 	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fail(err)
+	}
+
+	if rowsAffected == 0 {
+		return true, false, nil // Conflict
+	}
+
+	if se.Deleted != nil && *se.Deleted && se.ClientDefinedUniqueTag != nil {
+		_, err = tx.Exec("DELETE FROM sync_entities WHERE client_id = ? AND id = ?", se.ClientID, "Client#"+*se.ClientDefinedUniqueTag)
+		if err != nil {
+			return fail(err)
+		}
+		delete = true
+	}
+
 	if err = tx.Commit(); err != nil {
 		return fail(err)
 	}
-	return false, false, nil
+
+	return false, delete, nil
 }
 
 const getClientItemCountQuery = `
