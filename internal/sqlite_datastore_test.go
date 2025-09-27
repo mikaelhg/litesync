@@ -3,7 +3,7 @@ package internal_test
 import (
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/brave/go-sync/datastore"
 	"github.com/mikaelhg/litesync/internal"
 	"github.com/stretchr/testify/assert"

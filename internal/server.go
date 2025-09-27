@@ -8,16 +8,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	appctx "github.com/brave-intl/bat-go/libs/context"
 	"github.com/brave-intl/bat-go/libs/logging"
-	batware "github.com/brave-intl/bat-go/libs/middleware"
 	"github.com/brave/go-sync/cache"
 	syncContext "github.com/brave/go-sync/context"
 	"github.com/brave/go-sync/controller"
 	"github.com/brave/go-sync/middleware"
+	syncMiddleware "github.com/brave/go-sync/middleware"
 	"github.com/go-chi/chi/v5"
 	chiware "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
@@ -103,11 +104,12 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger, dbPath string) (co
 		router.Use(hlog.NewHandler(*logger))
 		router.Use(hlog.UserAgentHandler("user_agent"))
 		router.Use(hlog.RequestIDHandler("req_id", "Request-Id"))
-		router.Use(batware.RequestLogger(logger))
+		// router.Use(batware.RequestLogger(logger))
+		// router.Use(httplog.RequestLogger(logger))
 	}
 
 	router.Use(chiware.Timeout(defaultTimeout))
-	router.Use(batware.BearerToken)
+	router.Use(bearerToken)
 	router.Use(middleware.CommonResponseHeaders)
 
 	// Data store initialization
@@ -123,8 +125,28 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger, dbPath string) (co
 	ctx = context.WithValue(ctx, syncContext.ContextKeyDatastore, sqliteStore)
 	ctx = context.WithValue(ctx, syncContext.ContextKeyCache, &cacheInstance)
 
-	// Route mounting
-	router.Mount("/litesync", controller.SyncRouter(cacheInstance, sqliteStore))
+	r := chi.NewRouter()
+	r.Use(syncMiddleware.Auth)
+	r.Use(syncMiddleware.DisabledChain)
+	r.Method("POST", "/command/", controller.Command(cacheInstance, sqliteStore))
+	router.Mount("/litesync", r)
 
 	return ctx, router, nil
+}
+
+type bearerTokenKey struct{}
+
+// BearerToken is a middleware that adds the bearer token included in a request's headers to context
+func bearerToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var token string
+
+		bearer := r.Header.Get("Authorization")
+
+		if len(bearer) > 7 && strings.ToUpper(bearer[0:6]) == "BEARER" {
+			token = bearer[7:]
+		}
+		ctx := context.WithValue(r.Context(), bearerTokenKey{}, token)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }

@@ -270,21 +270,18 @@ FROM sync_entities
 WHERE client_id = ?
 `
 
-func (d SqliteDatastore) GetClientItemCount(clientID string) (int, error) {
-	fail := func(err error) (int, error) {
-		return -1, fmt.Errorf("GetClientItemCount: %v", err)
-	}
+func (d SqliteDatastore) GetClientItemCount(clientID string) (*braveds.ClientItemCounts, error) {
 	tx, err := d.db.BeginTx(context.Background(), nil)
 	if err != nil {
-		return fail(err)
+		return nil, err
 	}
-	var count int = -1
+	var count braveds.ClientItemCounts
 	row := tx.QueryRow(getClientItemCountQuery, clientID)
 	row.Scan(&count)
 	if err = tx.Commit(); err != nil {
-		return fail(err)
+		return nil, err
 	}
-	return count, nil
+	return &count, nil
 }
 
 func (d SqliteDatastore) GetUpdatesForType(dataType int, clientToken int64, fetchFolders bool, clientID string, maxSize int64) (bool, []braveds.SyncEntity, error) {
@@ -295,7 +292,7 @@ func (d SqliteDatastore) HasServerDefinedUniqueTag(clientID string, tag string) 
 	return false, nil
 }
 
-func (d SqliteDatastore) UpdateClientItemCount(clientID string, count int) error {
+func (d SqliteDatastore) UpdateClientItemCount(counts *braveds.ClientItemCounts, newNormalItemCount int, newHistoryItemCount int) error {
 	return nil
 }
 

@@ -25,7 +25,7 @@ func (c *FakeRedisClient) Set(ctx context.Context, key string, val string, ttl t
 	return nil
 }
 
-func (c *FakeRedisClient) Get(ctx context.Context, key string) (string, error) {
+func (c *FakeRedisClient) Get(ctx context.Context, key string, deleteAfterGet bool) (string, error) {
 	value, ok := c.items.Get(key)
 	if ok {
 		return value.(string), nil
