@@ -25,8 +25,10 @@ type SyncEntityTestSuite struct {
 func (suite *SyncEntityTestSuite) SetupSuite() {
 	datastore.Table = "client-entity-test-datastore"
 	var err error
-	suite.dynamo, err = internal.NewSqliteDatastore(":mem:")
+	suite.dynamo, err = internal.NewSqliteDatastore(":memory:")
 	suite.Require().NoError(err, "Failed to get dynamoDB session")
+	suite.Require().NoError(
+		suite.dynamo.CreateTable(), "Failed to create table")
 }
 
 func (suite *SyncEntityTestSuite) SetupTest() {

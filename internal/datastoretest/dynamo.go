@@ -1,6 +1,9 @@
 package datastoretest
 
 import (
+	"database/sql"
+	"fmt"
+
 	"github.com/brave/go-sync/datastore"
 	"github.com/mikaelhg/litesync/internal"
 )
@@ -63,64 +66,109 @@ func ResetTable(dynamo *internal.SqliteDatastore) error {
 	return nil
 }
 
-// ScanSyncEntities scans the dynamoDB table and returns all sync items.
-func ScanSyncEntities(dynamo *internal.SqliteDatastore) ([]datastore.SyncEntity, error) {
-	// filter := expression.AttributeExists(expression.Name("Version"))
-	// expr, err := expression.NewBuilder().WithFilter(filter).Build()
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error building expression to scan sync entitites: %w", err)
-	// }
+// ScanSyncEntities scans the SQLite table and returns all sync items.
+func ScanSyncEntities(sqlite *internal.SqliteDatastore) ([]datastore.SyncEntity, error) {
+	var syncItems []datastore.SyncEntity
+	var scanErr error
 
-	// input := &dynamodb.ScanInput{
-	// 	ExpressionAttributeNames:  expr.Names(),
-	// 	ExpressionAttributeValues: expr.Values(),
-	// 	FilterExpression:          expr.Filter(),
-	// 	TableName:                 aws.String(datastore.Table),
-	// }
-	// out, err := dynamo.Scan(input)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error doing scan for sync entities: %w", err)
-	// }
-	// syncItems := []datastore.SyncEntity{}
-	// err = dynamodbattribute.UnmarshalListOfMaps(out.Items, &syncItems)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error unmarshalling sync entitites: %w", err)
-	// }
+	_, err := sqlite.ExecInTransaction(func(tx *sql.Tx) (sql.Result, error) {
+		const query = `
+            SELECT client_id, id, parent_id, version, mtime, ctime, name, non_unique_name,
+                   server_defined_unique_tag, deleted, originator_cache_guid,
+                   originator_client_item_id, specifics, data_type, folder,
+                   client_defined_unique_tag, unique_position, data_type_mtime, expiration_time
+            FROM sync_entities`
 
-	// return syncItems, nil
+		rows, err := tx.Query(query)
+		if err != nil {
+			scanErr = fmt.Errorf("error querying sync entities: %w", err)
+			return nil, scanErr
+		}
+		defer rows.Close()
 
-	return nil, nil
+		syncItems = []datastore.SyncEntity{}
+		for rows.Next() {
+			var entity datastore.SyncEntity
+			err := rows.Scan(
+				&entity.ClientID,
+				&entity.ID,
+				&entity.ParentID,
+				&entity.Version,
+				&entity.Mtime,
+				&entity.Ctime,
+				&entity.Name,
+				&entity.NonUniqueName,
+				&entity.ServerDefinedUniqueTag,
+				&entity.Deleted,
+				&entity.OriginatorCacheGUID,
+				&entity.OriginatorClientItemID,
+				&entity.Specifics,
+				&entity.DataType,
+				&entity.Folder,
+				&entity.ClientDefinedUniqueTag,
+				&entity.UniquePosition,
+				&entity.DataTypeMtime,
+				&entity.ExpirationTime,
+			)
+			if err != nil {
+				scanErr = fmt.Errorf("error scanning sync entity: %w", err)
+				return nil, scanErr
+			}
+			syncItems = append(syncItems, entity)
+		}
+
+		if err = rows.Err(); err != nil {
+			scanErr = fmt.Errorf("error iterating sync entities: %w", err)
+			return nil, scanErr
+		}
+
+		return nil, nil // No result to return for SELECT queries
+	})
+
+	if err != nil && scanErr == nil {
+		return nil, err
+	}
+	if scanErr != nil {
+		return nil, scanErr
+	}
+
+	return syncItems, nil
 }
 
-// ScanTagItems scans the dynamoDB table and returns all tag items.
-func ScanTagItems(dynamo *internal.SqliteDatastore) ([]datastore.ServerClientUniqueTagItem, error) {
-	// filter := expression.And(
-	// 	expression.AttributeNotExists(expression.Name("ExpireAt")),
-	// 	expression.AttributeNotExists(expression.Name("Version")))
-	// expr, err := expression.NewBuilder().WithFilter(filter).Build()
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error building expression to scan tag items: %w", err)
-	// }
+// ScanTagItems scans the SQLite table and returns all tag items.
+func ScanTagItems(sqlite *internal.SqliteDatastore) ([]datastore.ServerClientUniqueTagItem, error) {
+	const query = `
+        SELECT client_id, id, mtime, ctime
+        FROM sync_entities
+        WHERE expiration_time IS NULL 
+        AND version IS NULL`
 
-	// input := &dynamodb.ScanInput{
-	// 	ExpressionAttributeNames:  expr.Names(),
-	// 	ExpressionAttributeValues: expr.Values(),
-	// 	FilterExpression:          expr.Filter(),
-	// 	TableName:                 aws.String(datastore.Table),
-	// }
-	// out, err := dynamo.Scan(input)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error doing scan for tag items: %w", err)
-	// }
-	// tagItems := []datastore.ServerClientUniqueTagItem{}
-	// err = dynamodbattribute.UnmarshalListOfMaps(out.Items, &tagItems)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error unmarshalling tag items: %w", err)
-	// }
+	rows, err := sqlite.Db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("error querying tag items: %w", err)
+	}
+	defer rows.Close()
 
-	// return tagItems, nil
+	tagItems := []datastore.ServerClientUniqueTagItem{}
+	for rows.Next() {
+		var entity datastore.ServerClientUniqueTagItem
+		err := rows.Scan(
+			&entity.ClientID,
+			&entity.ID,
+			&entity.Mtime,
+			&entity.Ctime,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning tag item: %w", err)
+		}
+		tagItems = append(tagItems, entity)
+	}
 
-	return nil, nil
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating tag items: %w", err)
+	}
+
+	return tagItems, nil
 }
 
 // ScanClientItemCounts scans the dynamoDB table and returns all client item
