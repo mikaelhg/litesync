@@ -17,7 +17,6 @@ import (
 	"github.com/brave/go-sync/cache"
 	syncContext "github.com/brave/go-sync/context"
 	"github.com/brave/go-sync/controller"
-	"github.com/brave/go-sync/middleware"
 	syncMiddleware "github.com/brave/go-sync/middleware"
 	"github.com/go-chi/chi/v5"
 	chiware "github.com/go-chi/chi/v5/middleware"
@@ -110,7 +109,7 @@ func setupRouter(ctx context.Context, logger *zerolog.Logger, dbPath string) (co
 
 	router.Use(chiware.Timeout(defaultTimeout))
 	router.Use(bearerToken)
-	router.Use(middleware.CommonResponseHeaders)
+	router.Use(syncMiddleware.CommonResponseHeaders)
 
 	// Data store initialization
 	sqliteStore, err := NewSqliteDatastore(dbPath)
